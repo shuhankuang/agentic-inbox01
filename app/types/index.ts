@@ -20,6 +20,8 @@ export interface Mailbox {
 	id: string;
 	email: string;
 	name: string;
+	/** Unread emails across actionable folders (excludes drafts, spam, trash). */
+	unreadCount?: number;
 	settings?: MailboxSettings;
 }
 

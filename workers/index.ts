@@ -96,7 +96,25 @@ app.get("/api/v1/config", (c) => {
 
 app.get("/api/v1/mailboxes", async (c) => {
 	const allMailboxes = await listMailboxes(c.env.BUCKET);
-	return c.json(allMailboxes.map((m) => ({ ...m, name: m.id })));
+	const withUnread = await Promise.all(
+		allMailboxes.map(async (m) => {
+			// One aggregate SQL query per mailbox. The list is one entry per
+			// address on the domain, so the fan-out stays small.
+			let unreadCount = 0;
+			try {
+				const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(m.id));
+				unreadCount = await stub.getUnreadCount();
+			} catch (e) {
+				// A count is decoration — never fail the whole list over it.
+				console.error(
+					`Failed to read unread count for ${m.id}:`,
+					(e as Error).message,
+				);
+			}
+			return { ...m, name: m.id, unreadCount };
+		}),
+	);
+	return c.json(withUnread);
 });
 
 app.post("/api/v1/mailboxes", async (c) => {

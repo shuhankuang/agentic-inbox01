@@ -3,6 +3,7 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import {
+	Badge,
 	Button,
 	Dialog,
 	Empty,
@@ -30,7 +31,10 @@ export function meta() {
 
 export default function HomeRoute() {
 	const toastManager = useKumoToastManager();
-	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes();
+	const { data: mailboxes = [], refetch: refetchMailboxes, isFetched: mailboxesFetched } = useMailboxes({
+		// Unread badges should not go stale while this page sits open.
+		refetchInterval: 60_000,
+	});
 	const createMailbox = useCreateMailbox();
 	const deleteMailbox = useDeleteMailbox();
 
@@ -129,13 +133,24 @@ export default function HomeRoute() {
 	};
 
 	const isConfigured = emailAddresses.length > 0;
-	const accounts = isConfigured
-		? emailAddresses.map((addr) => ({
-				id: addr,
-				email: addr,
-				name: addr.split("@")[0] || addr,
-			}))
-		: mailboxes;
+	// Unread counts are attached by the mailboxes API, which stats each mailbox's
+	// Durable Object. Merge them by address so the list works whether it is driven
+	// by the EMAIL_ADDRESSES config or by the mailboxes that already exist.
+	const unreadByEmail = new Map(
+		mailboxes.map((m) => [m.email.toLowerCase(), m.unreadCount ?? 0]),
+	);
+	const accounts = (
+		isConfigured
+			? emailAddresses.map((addr) => ({
+					id: addr,
+					email: addr,
+					name: addr.split("@")[0] || addr,
+				}))
+			: mailboxes
+	).map((account) => ({
+		...account,
+		unreadCount: unreadByEmail.get(account.email.toLowerCase()) ?? 0,
+	}));
 
 	const isLoading = !configData;
 
@@ -187,6 +202,11 @@ export default function HomeRoute() {
 										{account.email}
 									</div>
 								</div>
+								{account.unreadCount > 0 && (
+									<Badge variant="primary" className="shrink-0">
+										{account.unreadCount} unread
+									</Badge>
+								)}
 								{!isConfigured && (
 									<Button
 										variant="ghost"

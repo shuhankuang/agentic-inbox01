@@ -586,6 +586,26 @@ export class MailboxDO extends DurableObject<Env> {
 		return result;
 	}
 
+	/**
+	 * Total unread email count for the mailbox list badge.
+	 *
+	 * Counts unread mail in every "actionable" folder, which in practice means
+	 * the inbox plus any custom folders. Drafts are excluded (an unsent draft is
+	 * not unread mail), as are spam and trash, which users do not read as an
+	 * unread queue. Sent mail is stored as read, so it never contributes.
+	 */
+	async getUnreadCount(): Promise<number> {
+		const row = [
+			...this.ctx.storage.sql.exec(
+				`SELECT COUNT(*) as total FROM emails
+				 WHERE COALESCE(read, 0) = 0
+				   AND folder_id NOT IN ('draft', 'spam', 'trash')`,
+			),
+		][0] as { total: number } | undefined;
+
+		return row?.total ?? 0;
+	}
+
 	async createFolder(id: string, name: string, is_deletable: number = 1) {
 		try {
 			const result = this.db

@@ -13,7 +13,7 @@ import SingleMessageView from "~/components/email-panel/SingleMessageView";
 import ThreadMessage from "~/components/email-panel/ThreadMessage";
 import { splitEmailList, toEmailListValue } from "~/lib/utils";
 import api from "~/services/api";
-import { useDeleteEmail, useEmail, useMoveEmail, useReplyToEmail, useSendEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
+import { useDeleteEmail, useAiDraftReply, useEmail, useMoveEmail, useReplyToEmail, useSendEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
 import { useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
@@ -40,6 +40,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	const moveEmailMut = useMoveEmail();
 	const sendEmailMut = useSendEmail();
 	const replyMut = useReplyToEmail();
+	const aiDraftMut = useAiDraftReply();
 	const { data: folders = [] } = useFolders(mailboxId) as { data?: Folder[] };
 	const { data: currentMailbox } = useMailbox(mailboxId) as {
 		data?: Mailbox;
@@ -47,6 +48,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	const { closePanel, startCompose } = useUIStore();
 	const toastManager = useKumoToastManager();
 	const [isSending, setIsSending] = useState(false);
+	const [isAiDrafting, setIsAiDrafting] = useState(false);
 	const [sourceViewEmail, setSourceViewEmail] = useState<Email | null>(null);
 	const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
 	const [previewImage, setPreviewImage] = useState<{ url: string; filename: string } | null>(null);
@@ -106,6 +108,30 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 		if (target.id === emailId) closePanel();
 	};
 
+	/** Ask the agent for a reply draft to the email currently open in the panel. */
+	const handleAiDraft = async () => {
+		if (!mailboxId) return;
+		setIsAiDrafting(true);
+		try {
+			const result = await aiDraftMut.mutateAsync({ mailboxId, emailId: email.id });
+			if (result?.status === "draft_generated") {
+				toastManager.add({ title: "AI draft created — check the Drafts folder" });
+			} else {
+				toastManager.add({
+					title: result?.error || "The agent did not create a draft",
+					variant: "error",
+				});
+			}
+		} catch (err) {
+			const message =
+				(err instanceof Error ? err.message : null) ||
+				"Failed to draft a reply";
+			toastManager.add({ title: message, variant: "error" });
+		} finally {
+			setIsAiDrafting(false);
+		}
+	};
+
 	const handleSendDraft = async (draftMsg?: Email) => {
 		let target = draftMsg || email;
 		if (!mailboxId || !currentMailbox) return;
@@ -146,6 +172,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 				mailboxId={mailboxId}
 				isDraftFolder={isDraftFolder}
 				isSending={isSending}
+				isAiDrafting={isAiDrafting}
 				moveToFolders={moveToFolders}
 				onBack={closePanel}
 				onSendDraft={() => handleSendDraft()}
@@ -160,6 +187,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 					})
 				}
 				onForward={() => startCompose({ mode: "forward", originalEmail: email })}
+				onAiDraft={handleAiDraft}
 				onToggleStar={toggleStar}
 				onToggleRead={() => {
 					if (mailboxId) {

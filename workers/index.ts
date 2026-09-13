@@ -126,7 +126,7 @@ app.post("/api/v1/mailboxes", async (c) => {
 	}
 	const key = `mailboxes/${email}.json`;
 	if (await c.env.BUCKET.head(key)) return c.json({ error: "Mailbox already exists" }, 409);
-	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" } };
+	const defaultSettings = { fromName: name, forwarding: { enabled: false, email: "" }, signature: { enabled: false, text: "" }, autoReply: { enabled: false, subject: "", message: "" }, autoDraft: { enabled: false } };
 	const finalSettings = { ...defaultSettings, ...settings };
 	await c.env.BUCKET.put(key, JSON.stringify(finalSettings));
 	const stub = c.env.MAILBOX.get(c.env.MAILBOX.idFromName(email));
@@ -243,6 +243,51 @@ app.post("/api/v1/mailboxes/:mailboxId/drafts", async (c: AppContext) => {
 		thread_id: thread_id || in_reply_to || messageId,
 	}, []);
 	return c.json({ id: messageId, status: "draft", subject: subject || "", recipient: to || "", date: now }, 201);
+});
+
+/**
+ * Draft a reply with the AI agent on demand (the manual counterpart of the
+ * auto-draft trigger in receiveEmail). Same agent path, but the request comes
+ * from an operator clicking the AI reply button rather than from inbound mail.
+ */
+app.post("/api/v1/mailboxes/:mailboxId/emails/:emailId/ai-draft", async (c: AppContext) => {
+	const mailboxId = c.req.param("mailboxId")!;
+	const emailId = c.req.param("emailId")!;
+
+	const email = (await c.var.mailboxStub.getEmail(emailId)) as {
+		sender?: string;
+		subject?: string;
+		thread_id?: string | null;
+		folder_id?: string;
+	} | null;
+	if (!email) return c.json({ error: "Email not found" }, 404);
+	if (email.folder_id === Folders.DRAFT) {
+		return c.json({ error: "Cannot draft a reply to a draft" }, 400);
+	}
+
+	const agentStub = c.env.EMAIL_AGENT.get(c.env.EMAIL_AGENT.idFromName(mailboxId));
+	const agentResponse = await agentStub.fetch(
+		new Request("https://agents/draftReply", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				mailboxId,
+				emailId,
+				sender: email.sender || "",
+				subject: email.subject || "",
+				threadId: email.thread_id || emailId,
+				trigger: "manual",
+			}),
+		}),
+	);
+
+	const body = (await agentResponse.json().catch(() => null)) as
+		| { status?: string; text?: string; error?: string }
+		| null;
+	if (!agentResponse.ok || !body) {
+		return c.json({ error: body?.error || "Failed to generate a draft" }, 502);
+	}
+	return c.json(body);
 });
 
 app.get("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {
@@ -382,7 +427,19 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 	if (!mailboxId) throw new Error("received email with no valid recipient address");
 
 	const messageId = crypto.randomUUID();
-	if (!(await env.BUCKET.head(`mailboxes/${mailboxId}.json`))) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }
+	const mailboxObject = await env.BUCKET.get(`mailboxes/${mailboxId}.json`);
+	if (!mailboxObject) { console.log(`Ignoring email for ${mailboxId}: mailbox does not exist`); return; }
+
+	// Auto-drafting is opt-in per mailbox and defaults to off: a missing flag
+	// (all pre-existing mailboxes) means the agent is NOT triggered. The
+	// operator drafts replies explicitly via the AI reply button instead.
+	let autoDraftEnabled = false;
+	try {
+		const settings = await mailboxObject.json<{ autoDraft?: { enabled?: boolean } }>();
+		autoDraftEnabled = settings?.autoDraft?.enabled === true;
+	} catch (e) {
+		console.warn(`Could not parse settings for ${mailboxId}, treating auto-draft as off:`, (e as Error).message);
+	}
 
 	const stub = env.MAILBOX.get(env.MAILBOX.idFromName(mailboxId));
 
@@ -419,6 +476,11 @@ async function receiveEmail(event: { raw: ReadableStream; rawSize: number }, env
 		in_reply_to: inReplyTo, email_references: emailReferences.length > 0 ? JSON.stringify(emailReferences) : null,
 		thread_id: threadId, message_id: originalMessageId, raw_headers: JSON.stringify(parsedEmail.headers),
 	}, attachmentData);
+
+	if (!autoDraftEnabled) {
+		console.log(`Skipping auto-draft for ${mailboxId}: auto-draft is disabled in settings`);
+		return;
+	}
 
 	const agentStub = env.EMAIL_AGENT.get(env.EMAIL_AGENT.idFromName(mailboxId));
 	ctx.waitUntil(agentStub.fetch(new Request("https://agents/onNewEmail", {

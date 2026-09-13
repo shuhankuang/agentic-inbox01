@@ -13,6 +13,12 @@ export interface MailboxSettings {
 	forwarding?: { enabled: boolean; email: string };
 	signature?: SignatureSettings;
 	autoReply?: { enabled: boolean; subject: string; message: string };
+	/**
+	 * Draft a reply automatically when new mail arrives. Off by default and
+	 * treated as off when absent, so replies are only drafted on request via
+	 * the AI reply button in the email panel.
+	 */
+	autoDraft?: { enabled: boolean };
 	agentSystemPrompt?: string;
 }
 

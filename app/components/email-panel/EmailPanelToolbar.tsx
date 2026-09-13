@@ -15,6 +15,7 @@ import {
 	FolderSimpleIcon,
 	PaperPlaneTiltIcon,
 	PencilSimpleIcon,
+	RobotIcon,
 	StarIcon,
 	TrashIcon,
 	XIcon,
@@ -26,6 +27,7 @@ interface EmailPanelToolbarProps {
 	mailboxId?: string;
 	isDraftFolder: boolean;
 	isSending: boolean;
+	isAiDrafting: boolean;
 	moveToFolders: Folder[];
 	lastReceivedMessage?: Email;
 	onBack: () => void;
@@ -34,6 +36,7 @@ interface EmailPanelToolbarProps {
 	onReply: () => void;
 	onReplyAll: () => void;
 	onForward: () => void;
+	onAiDraft: () => void;
 	onToggleStar: () => void;
 	onToggleRead: () => void;
 	onMove: (folderId: string) => void;
@@ -46,6 +49,7 @@ export default function EmailPanelToolbar({
 	mailboxId,
 	isDraftFolder,
 	isSending,
+	isAiDrafting,
 	moveToFolders,
 	onBack,
 	onSendDraft,
@@ -53,6 +57,7 @@ export default function EmailPanelToolbar({
 	onReply,
 	onReplyAll,
 	onForward,
+	onAiDraft,
 	onToggleStar,
 	onToggleRead,
 	onMove,
@@ -121,6 +126,17 @@ export default function EmailPanelToolbar({
 							icon={<ArrowBendUpRightIcon size={18} />}
 							onClick={onForward}
 							aria-label="Forward"
+						/>
+					</Tooltip>
+					<Tooltip content="AI draft reply" side="bottom" asChild>
+						<Button
+							variant="ghost"
+							shape="square"
+							size="sm"
+							icon={<RobotIcon size={18} />}
+							onClick={onAiDraft}
+							loading={isAiDrafting}
+							aria-label="AI draft reply"
 						/>
 					</Tooltip>
 				</>

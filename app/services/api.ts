@@ -144,6 +144,11 @@ const api = {
 	) => post<{ draft_id: string }>(`/api/v1/mailboxes/${mailboxId}/drafts`, draft),
 	replyToEmail: (mailboxId: string, emailId: string, email: unknown) =>
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/reply`, email),
+	/** Ask the AI agent to draft a reply to this email, on demand. */
+	aiDraftReply: (mailboxId: string, emailId: string) =>
+		post<{ status?: string; text?: string; error?: string }>(
+			`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/ai-draft`,
+		),
 	forwardEmail: (mailboxId: string, emailId: string, email: unknown) =>
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/forward`, email),
 

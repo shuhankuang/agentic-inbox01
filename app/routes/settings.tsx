@@ -2,7 +2,7 @@
 // Licensed under the Apache 2.0 license found in the LICENSE file or at:
 //     https://opensource.org/licenses/Apache-2.0
 
-import { Badge, Button, Input, Loader, useKumoToastManager } from "@cloudflare/kumo";
+import { Badge, Button, Input, Loader, Switch, useKumoToastManager } from "@cloudflare/kumo";
 import { RobotIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
@@ -20,12 +20,15 @@ export default function SettingsRoute() {
 
 	const [displayName, setDisplayName] = useState("");
 	const [agentPrompt, setAgentPrompt] = useState("");
+	const [autoDraft, setAutoDraft] = useState(false);
 	const [isSaving, setIsSaving] = useState(false);
 
 	useEffect(() => {
 		if (mailbox) {
 			setDisplayName(mailbox.settings?.fromName || mailbox.name || "");
 			setAgentPrompt(mailbox.settings?.agentSystemPrompt || "");
+			// Absent means off: auto-drafting is opt-in.
+			setAutoDraft(mailbox.settings?.autoDraft?.enabled === true);
 		}
 	}, [mailbox]);
 
@@ -36,6 +39,8 @@ export default function SettingsRoute() {
 			...mailbox.settings,
 			fromName: displayName,
 			agentSystemPrompt: agentPrompt.trim() || undefined,
+			// Sent explicitly so Save Changes can't clobber the toggle state.
+			autoDraft: { enabled: autoDraft },
 		};
 		try {
 			await updateMailboxMutation.mutateAsync({ mailboxId, settings });
@@ -52,6 +57,29 @@ export default function SettingsRoute() {
 
 	const handleResetPrompt = () => {
 		setAgentPrompt("");
+	};
+
+	/** Persist the auto-draft switch immediately, independent of Save Changes. */
+	const handleToggleAutoDraft = async (enabled: boolean) => {
+		if (!mailbox || !mailboxId) return;
+		setAutoDraft(enabled);
+		try {
+			await updateMailboxMutation.mutateAsync({
+				mailboxId,
+				settings: { ...mailbox.settings, autoDraft: { enabled } },
+			});
+			toastManager.add({
+				title: enabled
+					? "Auto-draft on: new mail gets a draft reply automatically"
+					: "Auto-draft off: draft replies on demand instead",
+			});
+		} catch {
+			setAutoDraft(!enabled);
+			toastManager.add({
+				title: "Failed to update auto-draft",
+				variant: "error",
+			});
+		}
 	};
 
 	if (!mailbox) {
@@ -82,6 +110,33 @@ export default function SettingsRoute() {
 						/>
 						<Input label="Email" type="email" value={mailbox.email} disabled />
 					</div>
+				</div>
+
+				{/* AI Auto-Draft */}
+				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+					<div className="flex items-start justify-between gap-4">
+						<div className="flex items-center gap-2">
+							<RobotIcon size={16} weight="duotone" className="text-kumo-subtle" />
+							<span className="text-sm font-medium text-kumo-default">
+								Auto-Draft Replies
+							</span>
+							{autoDraft ? (
+								<Badge variant="primary">On</Badge>
+							) : (
+								<Badge variant="secondary">Off</Badge>
+							)}
+						</div>
+						<Switch
+							checked={autoDraft}
+							onCheckedChange={(checked) => handleToggleAutoDraft(checked)}
+							aria-label="Auto-draft replies"
+						/>
+					</div>
+					<p className="text-xs text-kumo-subtle mt-3">
+						When on, the agent drafts a reply automatically for every new
+						incoming email. When off, nothing is drafted until you click the
+						AI reply button in an email.
+					</p>
 				</div>
 
 				{/* Agent System Prompt */}

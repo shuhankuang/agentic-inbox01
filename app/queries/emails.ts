@@ -277,3 +277,19 @@ export function useForwardEmail() {
 		onSuccess: (_data, { mailboxId }) => invalidate(mailboxId),
 	});
 }
+
+/**
+ * Ask the AI agent to draft a reply on demand. Invalidating the email + folder
+ * queries makes the new draft show up in the thread and the Drafts badge.
+ */
+export function useAiDraftReply() {
+	const invalidate = useInvalidateEmailData();
+	return useMutation({
+		mutationFn: ({
+			mailboxId,
+			emailId,
+		}: { mailboxId: string; emailId: string }) =>
+			api.aiDraftReply(mailboxId, emailId),
+		onSuccess: (_data, { mailboxId }) => invalidate(mailboxId),
+	});
+}

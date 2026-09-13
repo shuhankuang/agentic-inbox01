@@ -298,33 +298,40 @@ export class EmailAgent extends AIChatAgent<any> {
 	 */
 	async onRequest(request: Request): Promise<Response> {
 		const url = new URL(request.url);
-		if (url.pathname === "/onNewEmail" && request.method === "POST") {
-			try {
-				const emailData = await request.json() as {
-					mailboxId: string;
-					emailId: string;
-					sender: string;
-					subject: string;
-					threadId: string;
-				};
-				const result = await this.handleNewEmail(emailData);
-				return new Response(JSON.stringify(result), {
-					headers: { "Content-Type": "application/json" },
-				});
-			} catch (e) {
-				console.error("onNewEmail handler failed:", (e as Error).message);
-				return new Response(
-					JSON.stringify({ error: (e as Error).message }),
-					{ status: 500, headers: { "Content-Type": "application/json" } },
-				);
+		if (url.pathname === "/onNewEmail" || url.pathname === "/draftReply") {
+			if (request.method === "POST") {
+				try {
+					const emailData = await request.json() as {
+						mailboxId: string;
+						emailId: string;
+						sender: string;
+						subject: string;
+						threadId: string;
+						trigger?: "auto" | "manual";
+					};
+					const result = await this.handleNewEmail(emailData);
+					return new Response(JSON.stringify(result), {
+						headers: { "Content-Type": "application/json" },
+					});
+				} catch (e) {
+					console.error("Draft reply handler failed:", (e as Error).message);
+					return new Response(
+						JSON.stringify({ error: (e as Error).message }),
+						{ status: 500, headers: { "Content-Type": "application/json" } },
+					);
+				}
 			}
 		}
 		return super.onRequest(request);
 	}
 
 	/**
-	 * Called when a new email arrives. Reads it, loads the thread,
-	 * drafts a response, and saves it to the Drafts folder.
+	 * Reads an email, loads its thread, drafts a response with the agent, and
+	 * saves it to the Drafts folder.
+	 *
+	 * Called either automatically for inbound mail (trigger: "auto", gated by
+	 * the mailbox's autoDraft setting) or on demand when the operator clicks the
+	 * AI reply button (trigger: "manual").
 	 */
 	async handleNewEmail(emailData: {
 		mailboxId: string;
@@ -332,8 +339,10 @@ export class EmailAgent extends AIChatAgent<any> {
 		sender: string;
 		subject: string;
 		threadId: string;
+		trigger?: "auto" | "manual";
 	}) {
 		const env = this.env as Env;
+		const triggerLabel = emailData.trigger === "manual" ? "[Requested]" : "[Auto-triggered]";
 		const workersai = createWorkersAI({ binding: env.AI });
 		const tools = createEmailTools(env, emailData.mailboxId);
 		const systemPrompt = await getSystemPrompt(env, emailData.mailboxId);
@@ -349,28 +358,31 @@ export class EmailAgent extends AIChatAgent<any> {
 			if (email?.body) {
 				const isInjection = await isPromptInjection(env.AI, email.body);
 				if (isInjection) {
-					console.warn("Skipping auto-draft due to detected prompt injection:", emailData.emailId);
+					console.warn("Skipping draft due to detected prompt injection:", emailData.emailId);
 					
 					// Log to agent chat so the user knows why it skipped
 					const newMessages = [
 						{
 							id: crypto.randomUUID(),
 							role: "user" as const,
-							content: `[Auto-triggered] New email from ${emailData.sender}: "${emailData.subject}"`,
+							content: `${triggerLabel} New email from ${emailData.sender}: "${emailData.subject}"`,
 							createdAt: new Date(),
-							parts: [{ type: "text" as const, text: `[Auto-triggered] New email from ${emailData.sender}: "${emailData.subject}"` }],
+							parts: [{ type: "text" as const, text: `${triggerLabel} New email from ${emailData.sender}: "${emailData.subject}"` }],
 						},
 						{
 							id: crypto.randomUUID(),
 							role: "assistant" as const,
-							content: "⚠️ Blocked auto-draft creation: the email appears to contain prompt injection or malicious instructions.",
+							content: "⚠️ Blocked draft creation: the email appears to contain prompt injection or malicious instructions.",
 							createdAt: new Date(),
-							parts: [{ type: "text" as const, text: "⚠️ Blocked auto-draft creation: the email appears to contain prompt injection or malicious instructions." }],
+							parts: [{ type: "text" as const, text: "⚠️ Blocked draft creation: the email appears to contain prompt injection or malicious instructions." }],
 						},
 					];
 					await this.persistMessages([...this.messages, ...newMessages]);
-					
-					return;
+
+					return {
+						status: "blocked",
+						error: "Blocked: the email looks like a prompt injection attempt, so no draft was written.",
+					};
 				}
 				
 				emailBody = stripHtmlToText(email.body);
@@ -397,25 +409,28 @@ export class EmailAgent extends AIChatAgent<any> {
 			if (threadContext) {
 				const threadInjection = await isPromptInjection(env.AI, threadContext);
 				if (threadInjection) {
-					console.warn("Skipping auto-draft due to prompt injection in thread context:", emailData.threadId);
+					console.warn("Skipping draft due to prompt injection in thread context:", emailData.threadId);
 					const newMessages = [
 						{
 							id: crypto.randomUUID(),
 							role: "user" as const,
-							content: `[Auto-triggered] New email from ${emailData.sender}: "${emailData.subject}"`,
+							content: `${triggerLabel} New email from ${emailData.sender}: "${emailData.subject}"`,
 							createdAt: new Date(),
-							parts: [{ type: "text" as const, text: `[Auto-triggered] New email from ${emailData.sender}: "${emailData.subject}"` }],
+							parts: [{ type: "text" as const, text: `${triggerLabel} New email from ${emailData.sender}: "${emailData.subject}"` }],
 						},
 						{
 							id: crypto.randomUUID(),
 							role: "assistant" as const,
-							content: "Blocked auto-draft creation: the thread context appears to contain prompt injection or malicious instructions.",
+							content: "Blocked draft creation: the thread context appears to contain prompt injection or malicious instructions.",
 							createdAt: new Date(),
-							parts: [{ type: "text" as const, text: "Blocked auto-draft creation: the thread context appears to contain prompt injection or malicious instructions." }],
+							parts: [{ type: "text" as const, text: "Blocked draft creation: the thread context appears to contain prompt injection or malicious instructions." }],
 						},
 					];
 					await this.persistMessages([...this.messages, ...newMessages]);
-					return;
+					return {
+						status: "blocked",
+						error: "Blocked: the thread looks like a prompt injection attempt, so no draft was written.",
+					};
 				}
 			}
 		}
@@ -423,7 +438,7 @@ export class EmailAgent extends AIChatAgent<any> {
 			console.warn("Pre-read failed, agent will use tools:", (e as Error).message);
 		}
 
-		let autoPrompt = `A new email just arrived. Draft an appropriate response using draft_reply.
+		let autoPrompt = `An email needs a reply. Draft a response using draft_reply.
 
 Email details:
 - Mailbox: ${emailData.mailboxId}
@@ -450,7 +465,7 @@ This is the first message in the thread (no prior conversation).`;
 
 Based on the email content and thread context above, draft a reply using draft_reply. If you need more context, use get_thread with thread ID "${emailData.threadId}".`;
 
-		// Fresh context for auto-draft -- don't include prior chat history
+		// Fresh context for the draft -- don't include prior chat history
 		// to avoid confusing the model with old messages and tool calls
 		const messages = [
 			{
@@ -472,11 +487,11 @@ Based on the email content and thread context above, draft a reply using draft_r
 
 			// Check if draft_reply was called (saves to Drafts as side effect).
 			// If NOT, save the agent's text response as a draft directly.
-			const draftToolCalled = result.steps.some((step) =>
+			let draftSaved = result.steps.some((step) =>
 				step.toolCalls.some((tc) => tc.toolName === "draft_reply" || tc.toolName === "draft_email"),
 			);
 
-			if (!draftToolCalled && result.text.trim()) {
+			if (!draftSaved && result.text.trim()) {
 				// Model generated a draft inline as text -- verify with AI
 				const sanitizedText = await verifyDraft(env.AI, result.text.trim());
 				if (!sanitizedText) {
@@ -507,13 +522,14 @@ Based on the email content and thread context above, draft a reply using draft_r
 						[],
 					);
 					// Inline text saved as draft
+					draftSaved = true;
 				}
 			}
 
 			// Persist the conversation into the agent's chat history
 			// If it called the tool, we just log a simple success message so the chat isn't cluttered
 			// with conversational slop.
-			const assistantText = draftToolCalled 
+			const assistantText = draftSaved 
 				? `Created draft reply to ${emailData.sender}.`
 				: result.text;
 
@@ -521,12 +537,12 @@ Based on the email content and thread context above, draft a reply using draft_r
 				{
 					id: crypto.randomUUID(),
 					role: "user" as const,
-					content: `[Auto-triggered] New email from ${emailData.sender}: "${emailData.subject}"`,
+					content: `${triggerLabel} New email from ${emailData.sender}: "${emailData.subject}"`,
 					createdAt: new Date(),
 					parts: [
 						{
 							type: "text" as const,
-							text: `[Auto-triggered] New email from ${emailData.sender}: "${emailData.subject}"`,
+							text: `${triggerLabel} New email from ${emailData.sender}: "${emailData.subject}"`,
 						},
 					],
 				},
@@ -546,9 +562,13 @@ Based on the email content and thread context above, draft a reply using draft_r
 
 			await this.persistMessages([...this.messages, ...newMessages]);
 
-			return { status: "draft_generated", text: result.text };
+			// Report honestly: the model can finish without saving a draft (for
+			// example when its output was pure commentary that verifyDraft dropped).
+			return draftSaved
+				? { status: "draft_generated", text: result.text }
+				: { status: "no_draft", error: "The agent replied without creating a draft." };
 		} catch (e) {
-			console.error("Auto-draft failed:", (e as Error).message);
+			console.error("Draft reply failed:", (e as Error).message);
 			return { status: "error", error: (e as Error).message };
 		}
 	}

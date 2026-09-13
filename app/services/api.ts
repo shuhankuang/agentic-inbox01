@@ -144,9 +144,13 @@ const api = {
 	) => post<{ draft_id: string }>(`/api/v1/mailboxes/${mailboxId}/drafts`, draft),
 	replyToEmail: (mailboxId: string, emailId: string, email: unknown) =>
 		post<void>(`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/reply`, email),
-	/** Ask the AI agent to draft a reply to this email, on demand. */
+	/**
+	 * Ask the AI agent to draft a reply to this email, on demand. Resolves as
+	 * soon as the agent accepts the job (202); the draft itself is written in the
+	 * background, so the caller has to watch the thread for it.
+	 */
 	aiDraftReply: (mailboxId: string, emailId: string) =>
-		post<{ status?: string; text?: string; error?: string }>(
+		post<{ status?: string }>(
 			`/api/v1/mailboxes/${mailboxId}/emails/${emailId}/ai-draft`,
 		),
 	forwardEmail: (mailboxId: string, emailId: string, email: unknown) =>

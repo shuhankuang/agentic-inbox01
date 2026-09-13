@@ -266,28 +266,39 @@ app.post("/api/v1/mailboxes/:mailboxId/emails/:emailId/ai-draft", async (c: AppC
 	}
 
 	const agentStub = c.env.EMAIL_AGENT.get(c.env.EMAIL_AGENT.idFromName(mailboxId));
-	const agentResponse = await agentStub.fetch(
-		new Request("https://agents/draftReply", {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				mailboxId,
-				emailId,
-				sender: email.sender || "",
-				subject: email.subject || "",
-				threadId: email.thread_id || emailId,
-				trigger: "manual",
-			}),
-		}),
+	// Drafting takes tens of seconds (several model calls), far longer than a
+	// browser fetch is willing to wait, so hand the job off and answer now. The
+	// client watches the thread and picks the draft up when it lands.
+	c.executionCtx.waitUntil(
+		agentStub
+			.fetch(
+				new Request("https://agents/draftReply", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({
+						mailboxId,
+						emailId,
+						sender: email.sender || "",
+						subject: email.subject || "",
+						threadId: email.thread_id || emailId,
+						trigger: "manual",
+					}),
+				}),
+			)
+			.then(async (res) => {
+				const body = await res.text().catch(() => "");
+				if (!res.ok) {
+					console.error(`AI draft failed for ${mailboxId}/${emailId}: HTTP ${res.status} ${body}`);
+				} else {
+					console.log(`AI draft finished for ${mailboxId}/${emailId}: ${body}`);
+				}
+			})
+			.catch((e) =>
+				console.error(`AI draft request failed for ${mailboxId}/${emailId}:`, (e as Error).message),
+			),
 	);
 
-	const body = (await agentResponse.json().catch(() => null)) as
-		| { status?: string; text?: string; error?: string }
-		| null;
-	if (!agentResponse.ok || !body) {
-		return c.json({ error: body?.error || "Failed to generate a draft" }, 502);
-	}
-	return c.json(body);
+	return c.json({ status: "accepted" }, 202);
 });
 
 app.get("/api/v1/mailboxes/:mailboxId/emails/:id", async (c: AppContext) => {

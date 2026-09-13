@@ -3,7 +3,8 @@
 //     https://opensource.org/licenses/Apache-2.0
 
 import { useKumoToastManager } from "@cloudflare/kumo";
-import { useEffect, useMemo, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { Folders } from "shared/folders";
 import EmailPanelDialogs from "~/components/email-panel/EmailPanelDialogs";
@@ -13,11 +14,15 @@ import SingleMessageView from "~/components/email-panel/SingleMessageView";
 import ThreadMessage from "~/components/email-panel/ThreadMessage";
 import { splitEmailList, toEmailListValue } from "~/lib/utils";
 import api from "~/services/api";
+import { queryKeys } from "~/queries/keys";
 import { useDeleteEmail, useAiDraftReply, useEmail, useMoveEmail, useReplyToEmail, useSendEmail, useThreadReplies, useUpdateEmail } from "~/queries/emails";
 import { useFolders } from "~/queries/folders";
 import { useMailbox } from "~/queries/mailboxes";
 import { useUIStore } from "~/hooks/useUIStore";
 import type { Email, Folder, Mailbox } from "~/types";
+
+/** How long to wait for a requested AI draft before telling the operator. */
+const DRAFT_WAIT_MS = 150_000;
 
 function EmailPanelSkeleton() {
 	return (
@@ -47,8 +52,17 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 	};
 	const { closePanel, startCompose } = useUIStore();
 	const toastManager = useKumoToastManager();
+	const queryClient = useQueryClient();
 	const [isSending, setIsSending] = useState(false);
-	const [isAiDrafting, setIsAiDrafting] = useState(false);
+	// Non-null while waiting for a requested AI draft. Holds the requested thread
+	// and the draft ids that already existed, so the new one can be told apart.
+	const [pendingDraft, setPendingDraft] = useState<{
+		threadId: string;
+		knownDraftIds: Set<string>;
+	} | null>(null);
+	// Absolute deadline (not a plain timer) so re-running the polling effect, which
+	// happens whenever its dependencies change identity, cannot postpone give-up.
+	const draftDeadlineRef = useRef(0);
 	const [sourceViewEmail, setSourceViewEmail] = useState<Email | null>(null);
 	const [expandedMessages, setExpandedMessages] = useState<Set<string>>(new Set());
 	const [previewImage, setPreviewImage] = useState<{ url: string; filename: string } | null>(null);
@@ -87,6 +101,39 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 
 	const moveToFolders = useMemo(() => { const cur = folder || email?.folder_id; return folders.filter((f) => f.id !== cur); }, [folders, folder, email?.folder_id]);
 
+	// Keep refreshing while an AI draft is being written. These effects live above
+	// the `!email` return so the hook order stays stable across renders.
+	useEffect(() => {
+		if (!pendingDraft || !mailboxId) return;
+		const interval = setInterval(() => {
+			queryClient.invalidateQueries({ queryKey: ["emails", mailboxId] });
+			queryClient.invalidateQueries({ queryKey: queryKeys.folders.list(mailboxId) });
+			if (Date.now() >= draftDeadlineRef.current) {
+				setPendingDraft(null);
+				toastManager.add({
+					title:
+						"No draft appeared yet — check the AI panel on the right for the reason, or try again.",
+					variant: "error",
+				});
+			}
+		}, 3000);
+		return () => clearInterval(interval);
+	}, [pendingDraft, mailboxId, queryClient, toastManager]);
+
+	// Stop polling once the new draft shows up in the thread it was requested for.
+	const displayedThreadId = email?.thread_id || email?.id;
+	useEffect(() => {
+		if (!pendingDraft || displayedThreadId !== pendingDraft.threadId) return;
+		const found = allMessages.some(
+			(m) =>
+				m.folder_id === Folders.DRAFT && !pendingDraft.knownDraftIds.has(m.id),
+		);
+		if (found) {
+			setPendingDraft(null);
+			toastManager.add({ title: "AI draft ready — check the Drafts folder" });
+		}
+	}, [allMessages, displayedThreadId, pendingDraft, toastManager]);
+
 	if (!email) return <EmailPanelSkeleton />;
 
 	const toggleStar = () => { if (mailboxId) updateEmail.mutate({ mailboxId, id: email.id, data: { starred: !email.starred } }); };
@@ -108,27 +155,29 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 		if (target.id === emailId) closePanel();
 	};
 
-	/** Ask the agent for a reply draft to the email currently open in the panel. */
+	/**
+	 * Ask the agent for a reply draft to the email currently open in the panel.
+	 *
+	 * The API answers as soon as the agent accepts the job, so the draft has to be
+	 * waited for: poll the thread/folder queries until a new draft appears, and
+	 * give up with a pointer to the agent chat if it never does (the agent logs
+	 * the reason there, e.g. a blocked prompt-injection scan).
+	 */
 	const handleAiDraft = async () => {
-		if (!mailboxId) return;
-		setIsAiDrafting(true);
+		if (!mailboxId || pendingDraft) return;
+		const knownDraftIds = new Set(
+			allMessages.filter((m) => m.folder_id === Folders.DRAFT).map((m) => m.id),
+		);
+		const threadId = email.thread_id || email.id;
 		try {
-			const result = await aiDraftMut.mutateAsync({ mailboxId, emailId: email.id });
-			if (result?.status === "draft_generated") {
-				toastManager.add({ title: "AI draft created — check the Drafts folder" });
-			} else {
-				toastManager.add({
-					title: result?.error || "The agent did not create a draft",
-					variant: "error",
-				});
-			}
+			await aiDraftMut.mutateAsync({ mailboxId, emailId: email.id });
+			draftDeadlineRef.current = Date.now() + DRAFT_WAIT_MS;
+			setPendingDraft({ threadId, knownDraftIds });
 		} catch (err) {
 			const message =
 				(err instanceof Error ? err.message : null) ||
-				"Failed to draft a reply";
+				"Failed to start drafting a reply";
 			toastManager.add({ title: message, variant: "error" });
-		} finally {
-			setIsAiDrafting(false);
 		}
 	};
 
@@ -172,7 +221,7 @@ export default function EmailPanel({ emailId }: { emailId: string }) {
 				mailboxId={mailboxId}
 				isDraftFolder={isDraftFolder}
 				isSending={isSending}
-				isAiDrafting={isAiDrafting}
+				isAiDrafting={aiDraftMut.isPending || pendingDraft !== null}
 				moveToFolders={moveToFolders}
 				onBack={closePanel}
 				onSendDraft={() => handleSendDraft()}

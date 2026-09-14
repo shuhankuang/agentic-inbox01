@@ -11,9 +11,9 @@
  * breaking every draft.
  *
  * Note on model ids: the legacy DeepSeek names (deepseek-chat,
- * deepseek-reasoner) were retired on 2026-07-24. Use one of the current ids,
- * which are deepseek-v4-pro (strongest, best tool use) and deepseek-flash
- * (cheaper and faster).
+ * deepseek-reasoner) were retired on 2026-07-24. Current ids are
+ * deepseek-flash (used by default: cheap and fast) and deepseek-v4-pro
+ * (stronger and slower).
  */
 
 import { createDeepSeek } from "@ai-sdk/deepseek";
@@ -22,7 +22,7 @@ import type { LanguageModel } from "ai";
 import type { Env } from "../types";
 
 /** Model used when DEEPSEEK_MODEL is not set. */
-export const DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro";
+export const DEFAULT_DEEPSEEK_MODEL = "deepseek-flash";
 
 /** Workers AI model used as a fallback when no DeepSeek key is configured. */
 export const FALLBACK_WORKERS_AI_MODEL = "@cf/moonshotai/kimi-k2.5";

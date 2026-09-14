@@ -5,5 +5,5 @@ TEAM_DOMAIN=https://your-team.cloudflareaccess.com
 # DeepSeek API key used by the email agent (optional). Without it the agent
 # falls back to Workers AI. Get one at https://platform.deepseek.com
 DEEPSEEK_API_KEY=sk-your-deepseek-api-key
-# Optional: deepseek-v4-pro (default) or deepseek-flash (cheaper, faster).
-# DEEPSEEK_MODEL=deepseek-v4-pro
+# Optional: deepseek-flash (default, cheap and fast) or deepseek-v4-pro (stronger).
+# DEEPSEEK_MODEL=deepseek-flash

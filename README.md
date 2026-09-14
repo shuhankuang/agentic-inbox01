@@ -33,7 +33,7 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
      npx wrangler secret put DEEPSEEK_API_KEY
      ```
 
-     Without this secret the agent falls back to Workers AI, so a missing key degrades instead of breaking drafts. Add `DEEPSEEK_MODEL` as a plain variable to override the model (`deepseek-v4-pro` is the default; `deepseek-flash` is cheaper and faster). Note that the legacy ids `deepseek-chat` and `deepseek-reasoner` were retired by DeepSeek on 2026-07-24 and no longer work. The prompt-injection scanner and the draft verifier still use Workers AI models.
+     Without this secret the agent falls back to Workers AI, so a missing key degrades instead of breaking drafts. Add `DEEPSEEK_MODEL` to override the model (`deepseek-flash` is the default; `deepseek-v4-pro` is stronger but slower). Note that the legacy ids `deepseek-chat` and `deepseek-reasoner` were retired by DeepSeek on 2026-07-24 and no longer work. The prompt-injection scanner and the draft verifier still use Workers AI models.
 
 ### Troubleshooting Access
 

@@ -11,8 +11,8 @@ export interface Env extends Cloudflare.Env {
 	 */
 	DEEPSEEK_API_KEY?: string;
 	/**
-	 * DeepSeek model id. Defaults to deepseek-v4-pro; deepseek-flash is cheaper
-	 * and faster. The legacy ids deepseek-chat/deepseek-reasoner were retired.
+	 * DeepSeek model id. Defaults to deepseek-flash; deepseek-v4-pro is stronger
+	 * but slower. The legacy ids deepseek-chat/deepseek-reasoner were retired.
 	 */
 	DEEPSEEK_MODEL?: string;
 }

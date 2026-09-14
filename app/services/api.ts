@@ -97,7 +97,14 @@ interface EmailListResponse {
 const api = {
 	// Config
 	getConfig: () =>
-		get<{ domains: string[]; emailAddresses: string[] }>("/api/v1/config"),
+		get<{
+			domains: string[];
+			emailAddresses: string[];
+			/** Which model the agent uses, e.g. "deepseek:deepseek-flash". */
+			agentModel?: string;
+			/** False when DEEPSEEK_API_KEY is not visible to the Worker. */
+			deepseekConfigured?: boolean;
+		}>("/api/v1/config"),
 
 	// Mailboxes
 	listMailboxes: () => get<Mailbox[]>("/api/v1/mailboxes"),

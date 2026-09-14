@@ -18,6 +18,7 @@ import {
 import { SendEmailRequestSchema } from "./lib/schemas";
 import { handleReplyEmail, handleForwardEmail } from "./routes/reply-forward";
 import { Folders } from "../shared/folders";
+import { resolveAgentModelConfig } from "./lib/model";
 import type { Env } from "./types";
 import { requireMailbox, type MailboxContext } from "./lib/mailbox";
 
@@ -89,7 +90,15 @@ app.get("/api/v1/config", (c) => {
 	const domainsRaw = c.env.DOMAINS || "";
 	const domains = domainsRaw.split(",").map((d) => d.trim()).filter(Boolean);
 	const emailAddresses = c.env.EMAIL_ADDRESSES ?? [];
-	return c.json({ domains, emailAddresses });
+	// Surfaced so the UI can show whether the DeepSeek key reached the Worker:
+	// a key set in the dashboard only takes effect after a redeploy.
+	const agent = resolveAgentModelConfig(c.env);
+	return c.json({
+		domains,
+		emailAddresses,
+		agentModel: agent.label,
+		deepseekConfigured: agent.deepseekConfigured,
+	});
 });
 
 // -- Mailboxes ------------------------------------------------------

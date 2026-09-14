@@ -39,6 +39,37 @@ export const DEEPSEEK_PROVIDER_OPTIONS = {
 export const FALLBACK_WORKERS_AI_MODEL = "@cf/moonshotai/kimi-k2.5";
 
 /**
+ * Which model the agent will use, without constructing a provider.
+ *
+ * Used both by getAgentModel and by the config endpoint, so the UI can show
+ * whether the DeepSeek key is actually visible to the Worker.
+ */
+export function resolveAgentModelConfig(env: Env): {
+	provider: "deepseek" | "workers-ai";
+	modelId: string;
+	label: string;
+	deepseekConfigured: boolean;
+} {
+	const apiKey = env.DEEPSEEK_API_KEY;
+	if (apiKey) {
+		const modelId = env.DEEPSEEK_MODEL?.trim() || DEFAULT_DEEPSEEK_MODEL;
+		return {
+			provider: "deepseek",
+			modelId,
+			label: `deepseek:${modelId}`,
+			deepseekConfigured: true,
+		};
+	}
+
+	return {
+		provider: "workers-ai",
+		modelId: FALLBACK_WORKERS_AI_MODEL,
+		label: `workers-ai:${FALLBACK_WORKERS_AI_MODEL}`,
+		deepseekConfigured: false,
+	};
+}
+
+/**
  * Pick the chat model for this mailbox's agent.
  *
  * Returns the model, a label for logs (so `wrangler tail` shows which provider
@@ -53,12 +84,12 @@ export function getAgentModel(env: Env): {
 	label: string;
 	providerOptions: ProviderOptions;
 } {
-	const apiKey = env.DEEPSEEK_API_KEY;
-	if (apiKey) {
-		const modelId = env.DEEPSEEK_MODEL?.trim() || DEFAULT_DEEPSEEK_MODEL;
+	const config = resolveAgentModelConfig(env);
+
+	if (config.provider === "deepseek") {
 		return {
-			model: createDeepSeek({ apiKey })(modelId) as LanguageModel,
-			label: `deepseek:${modelId}`,
+			model: createDeepSeek({ apiKey: env.DEEPSEEK_API_KEY! })(config.modelId) as LanguageModel,
+			label: config.label,
 			providerOptions: DEEPSEEK_PROVIDER_OPTIONS,
 		};
 	}
@@ -67,8 +98,8 @@ export function getAgentModel(env: Env): {
 		"DEEPSEEK_API_KEY is not set — falling back to Workers AI. Set the secret to use DeepSeek.",
 	);
 	return {
-		model: createWorkersAI({ binding: env.AI })(FALLBACK_WORKERS_AI_MODEL) as LanguageModel,
-		label: `workers-ai:${FALLBACK_WORKERS_AI_MODEL}`,
+		model: createWorkersAI({ binding: env.AI })(config.modelId) as LanguageModel,
+		label: config.label,
 		providerOptions: {},
 	};
 }

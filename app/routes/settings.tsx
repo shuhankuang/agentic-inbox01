@@ -4,8 +4,11 @@
 
 import { Badge, Button, Input, Loader, Switch, useKumoToastManager } from "@cloudflare/kumo";
 import { RobotIcon, ArrowCounterClockwiseIcon } from "@phosphor-icons/react";
+import { useQuery } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useParams } from "react-router";
+import api from "~/services/api";
+import { queryKeys } from "~/queries/keys";
 import { useMailbox, useUpdateMailbox } from "~/queries/mailboxes";
 
 // Placeholder shown in the textarea when no custom prompt is set.
@@ -16,6 +19,11 @@ export default function SettingsRoute() {
 	const { mailboxId } = useParams<{ mailboxId: string }>();
 	const toastManager = useKumoToastManager();
 	const { data: mailbox } = useMailbox(mailboxId);
+	const { data: config } = useQuery({
+		queryKey: queryKeys.config,
+		queryFn: () => api.getConfig(),
+		staleTime: Infinity,
+	});
 	const updateMailboxMutation = useUpdateMailbox();
 
 	const [displayName, setDisplayName] = useState("");
@@ -137,6 +145,32 @@ export default function SettingsRoute() {
 						incoming email. When off, nothing is drafted until you click the
 						AI reply button in an email.
 					</p>
+				</div>
+
+				{/* AI Model */}
+				<div className="rounded-lg border border-kumo-line bg-kumo-base p-5">
+					<div className="flex items-center gap-2">
+						<RobotIcon size={16} weight="duotone" className="text-kumo-subtle" />
+						<span className="text-sm font-medium text-kumo-default">
+							AI Model
+						</span>
+						{config?.deepseekConfigured ? (
+							<Badge variant="primary">DeepSeek</Badge>
+						) : (
+							<Badge variant="secondary">Workers AI</Badge>
+						)}
+					</div>
+					<p className="text-xs text-kumo-subtle mt-3 font-mono">
+						{config?.agentModel ?? "Loading..."}
+					</p>
+					{config && !config.deepseekConfigured && (
+						<p className="text-xs text-kumo-subtle mt-2">
+							DEEPSEEK_API_KEY is not visible to the Worker, so drafts
+							still come from Workers AI. Set it as a secret and redeploy
+							— adding it to the dashboard alone does not affect an
+							already-deployed version.
+						</p>
+					)}
 				</div>
 
 				{/* Agent System Prompt */}

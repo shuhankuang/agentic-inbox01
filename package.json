@@ -27,6 +27,7 @@
 	},
 	"dependencies": {
 		"@ai-sdk/deepseek": "^2.0.64",
+		"@ai-sdk/provider-utils": "4.0.19",
 		"@cloudflare/ai-chat": "^0.1.8",
 		"@cloudflare/kumo": "^1.13.0",
 		"@phosphor-icons/react": "^2.1.10",

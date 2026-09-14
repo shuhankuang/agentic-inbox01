@@ -278,10 +278,11 @@ export class EmailAgent extends AIChatAgent<any> {
 		const mailboxId = this.name;
 		const tools = createEmailTools(env, mailboxId);
 		const systemPrompt = await getSystemPrompt(env, mailboxId);
-		const { model } = getAgentModel(env);
+		const { model, providerOptions } = getAgentModel(env);
 
 		const result = streamText({
 			model,
+			providerOptions,
 			system: systemPrompt,
 			messages: await convertToModelMessages(this.messages),
 			tools,
@@ -343,7 +344,7 @@ export class EmailAgent extends AIChatAgent<any> {
 	}) {
 		const env = this.env as Env;
 		const triggerLabel = emailData.trigger === "manual" ? "[Requested]" : "[Auto-triggered]";
-		const { model, label } = getAgentModel(env);
+		const { model, label, providerOptions } = getAgentModel(env);
 		console.log(`Drafting reply for ${emailData.emailId} with ${label}`);
 		const tools = createEmailTools(env, emailData.mailboxId);
 		const systemPrompt = await getSystemPrompt(env, emailData.mailboxId);
@@ -480,6 +481,7 @@ Based on the email content and thread context above, draft a reply using draft_r
 		try {
 			const result = await generateText({
 				model,
+				providerOptions,
 				system: systemPrompt,
 				messages: await convertToModelMessages(messages),
 				tools,

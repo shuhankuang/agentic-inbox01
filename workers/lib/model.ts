@@ -19,10 +19,21 @@
 import { createDeepSeek } from "@ai-sdk/deepseek";
 import { createWorkersAI } from "workers-ai-provider";
 import type { LanguageModel } from "ai";
+import type { ProviderOptions } from "@ai-sdk/provider-utils";
 import type { Env } from "../types";
 
 /** Model used when DEEPSEEK_MODEL is not set. */
 export const DEFAULT_DEEPSEEK_MODEL = "deepseek-flash";
+
+/**
+ * DeepSeek thinking mode is on by default and only adds latency for drafting
+ * email, so it is switched off. The provider serializes this into the request
+ * body as `thinking: { type: "disabled" }`. Turning it off also makes
+ * temperature/topP effective, which the API ignores while thinking is enabled.
+ */
+export const DEEPSEEK_PROVIDER_OPTIONS = {
+	deepseek: { thinking: { type: "disabled" } },
+} as const;
 
 /** Workers AI model used as a fallback when no DeepSeek key is configured. */
 export const FALLBACK_WORKERS_AI_MODEL = "@cf/moonshotai/kimi-k2.5";
@@ -30,8 +41,8 @@ export const FALLBACK_WORKERS_AI_MODEL = "@cf/moonshotai/kimi-k2.5";
 /**
  * Pick the chat model for this mailbox's agent.
  *
- * Returns the model plus a label for logs, so `wrangler tail` shows which
- * provider actually served a draft.
+ * Returns the model, a label for logs (so `wrangler tail` shows which provider
+ * actually served a draft), and the provider options to pass to the model call.
  *
  * The `as LanguageModel` casts are needed because @ai-sdk/deepseek pins its own
  * copy of @ai-sdk/provider (the root copy is pinned by `ai`), so the model
@@ -40,6 +51,7 @@ export const FALLBACK_WORKERS_AI_MODEL = "@cf/moonshotai/kimi-k2.5";
 export function getAgentModel(env: Env): {
 	model: LanguageModel;
 	label: string;
+	providerOptions: ProviderOptions;
 } {
 	const apiKey = env.DEEPSEEK_API_KEY;
 	if (apiKey) {
@@ -47,6 +59,7 @@ export function getAgentModel(env: Env): {
 		return {
 			model: createDeepSeek({ apiKey })(modelId) as LanguageModel,
 			label: `deepseek:${modelId}`,
+			providerOptions: DEEPSEEK_PROVIDER_OPTIONS,
 		};
 	}
 
@@ -56,5 +69,6 @@ export function getAgentModel(env: Env): {
 	return {
 		model: createWorkersAI({ binding: env.AI })(FALLBACK_WORKERS_AI_MODEL) as LanguageModel,
 		label: `workers-ai:${FALLBACK_WORKERS_AI_MODEL}`,
+		providerOptions: {},
 	};
 }

@@ -27,6 +27,13 @@ https://github.com/cloudflare/agentic-inbox/issues/4#issuecomment-4269118513
 3. **Set up Email Routing** -- In the Cloudflare dashboard, go to your domain > Email Routing and create a catch-all rule that forwards to this Worker
 4. **Enable Email Service** -- The worker needs the `send_email` binding to send outbound emails. See [Email Service docs](https://developers.cloudflare.com/email-routing/email-workers/send-email-workers/)
 5. **Create a mailbox** -- Visit your deployed app and create a mailbox for any address on your domain (e.g. `hello@example.com`)
+6. **(Optional) Use DeepSeek for the AI agent** -- Set a DeepSeek API key secret to run the agent on the [DeepSeek API](https://platform.deepseek.com) instead of Workers AI:
+
+     ```bash
+     npx wrangler secret put DEEPSEEK_API_KEY
+     ```
+
+     Without this secret the agent falls back to Workers AI, so a missing key degrades instead of breaking drafts. Add `DEEPSEEK_MODEL` as a plain variable to override the model (`deepseek-v4-pro` is the default; `deepseek-flash` is cheaper and faster). Note that the legacy ids `deepseek-chat` and `deepseek-reasoner` were retired by DeepSeek on 2026-07-24 and no longer work. The prompt-injection scanner and the draft verifier still use Workers AI models.
 
 ### Troubleshooting Access
 

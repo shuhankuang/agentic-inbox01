@@ -9,10 +9,10 @@ import {
 	convertToModelMessages,
 	stepCountIs,
 } from "ai";
-import { createWorkersAI } from "workers-ai-provider";
 import { z } from "zod";
 import type { EmailFull, EmailMetadata } from "../lib/schemas";
 import { verifyDraft, isPromptInjection } from "../lib/ai";
+import { getAgentModel } from "../lib/model";
 import {
 	getMailboxStub,
 	stripHtmlToText,
@@ -276,12 +276,12 @@ export class EmailAgent extends AIChatAgent<any> {
 	async onChatMessage(onFinish: any) {
 		const env = this.env as Env;
 		const mailboxId = this.name;
-		const workersai = createWorkersAI({ binding: env.AI });
 		const tools = createEmailTools(env, mailboxId);
 		const systemPrompt = await getSystemPrompt(env, mailboxId);
+		const { model } = getAgentModel(env);
 
 		const result = streamText({
-			model: workersai("@cf/moonshotai/kimi-k2.5"),
+			model,
 			system: systemPrompt,
 			messages: await convertToModelMessages(this.messages),
 			tools,
@@ -343,7 +343,8 @@ export class EmailAgent extends AIChatAgent<any> {
 	}) {
 		const env = this.env as Env;
 		const triggerLabel = emailData.trigger === "manual" ? "[Requested]" : "[Auto-triggered]";
-		const workersai = createWorkersAI({ binding: env.AI });
+		const { model, label } = getAgentModel(env);
+		console.log(`Drafting reply for ${emailData.emailId} with ${label}`);
 		const tools = createEmailTools(env, emailData.mailboxId);
 		const systemPrompt = await getSystemPrompt(env, emailData.mailboxId);
 
@@ -478,7 +479,7 @@ Based on the email content and thread context above, draft a reply using draft_r
 
 		try {
 			const result = await generateText({
-				model: workersai("@cf/moonshotai/kimi-k2.5"),
+				model,
 				system: systemPrompt,
 				messages: await convertToModelMessages(messages),
 				tools,
@@ -529,8 +530,8 @@ Based on the email content and thread context above, draft a reply using draft_r
 			// Persist the conversation into the agent's chat history
 			// If it called the tool, we just log a simple success message so the chat isn't cluttered
 			// with conversational slop.
-			const assistantText = draftSaved 
-				? `Created draft reply to ${emailData.sender}.`
+			const assistantText = draftSaved
+				? `Created draft reply to ${emailData.sender} (${label}).`
 				: result.text;
 
 			const newMessages = [
